@@ -53,4 +53,8 @@ impl CacheMetrics {
     fn misses(&self) -> u128 {
         self.cache_metrics.stats().misses()
     }
+
+    fn memory_usage(&self) -> usize {
+        self.cache_metrics.memory_usage()
+    }
 }

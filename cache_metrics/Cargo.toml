@@ -5,6 +5,6 @@ authors = ["Erik Johnston <erik@jki.re>"]
 edition = "2018"
 
 [dependencies]
-bloom = "0.3.2"
 cuckoofilter = "0.3.2"
-probabilistic-collections = "0.7.0"
+scalable_cuckoo_filter = "0.1.2"
+rand = "0.5"

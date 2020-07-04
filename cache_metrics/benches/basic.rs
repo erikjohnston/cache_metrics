@@ -4,7 +4,7 @@ extern crate test;
 
 use cache_metrics::Cache;
 
-use test::{Bencher};
+use test::Bencher;
 
 #[bench]
 fn bench_hit(b: &mut Bencher) {
@@ -14,7 +14,6 @@ fn bench_hit(b: &mut Bencher) {
         cache.insert(&5);
     });
 }
-
 
 #[bench]
 fn bench_miss(b: &mut Bencher) {

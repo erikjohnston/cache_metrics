@@ -3,8 +3,8 @@ use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 
 use cuckoofilter::CuckooFilter;
-
-use probabilistic_collections::cuckoo::ScalableCuckooFilter;
+use rand::rngs::OsRng;
+use scalable_cuckoo_filter::{ScalableCuckooFilter, ScalableCuckooFilterBuilder};
 
 pub const BUCKET_PERCENTAGES: [u16; 9] = [25, 50, 75, 90, 100, 110, 150, 200, 500];
 
@@ -38,18 +38,24 @@ impl BucketStats {
 
 pub struct Cache {
     queue: VecDeque<CuckooFilter<DefaultHasher>>,
-    all_keys: ScalableCuckooFilter<u64>,
+    all_keys: ScalableCuckooFilter<u64, DefaultHasher, OsRng>,
     max_size: u64,
     max_bucket_size: u64,
     stats: BucketStats,
-
 }
 
 impl Cache {
     pub fn new(max_size: u64) -> Cache {
+        let all_keys = ScalableCuckooFilterBuilder::new()
+            .initial_capacity(10 * max_size as usize)
+            .false_positive_probability(0.001)
+            .rng(OsRng::new().expect("os rng"))
+            .hasher(DefaultHasher::new())
+            .finish();
+
         Cache {
             max_size,
-            all_keys: ScalableCuckooFilter::new(10 * max_size as usize, 0.001,2.0, 0.5),
+            all_keys,
             queue: VecDeque::new(),
             max_bucket_size: max_size / 10,
             stats: BucketStats::default(),
@@ -98,6 +104,12 @@ impl Cache {
 
     pub fn stats(&self) -> &BucketStats {
         &self.stats
+    }
+
+    pub fn memory_usage(&self) -> usize {
+        let queue_mem: usize = self.queue.iter().map(|filter| filter.memory_usage()).sum();
+
+        queue_mem + self.all_keys.bits() as usize / 8
     }
 }
 

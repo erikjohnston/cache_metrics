@@ -1,6 +1,7 @@
 from typing import Any
 
-from prometheus_client.core import REGISTRY, HistogramMetricFamily
+from prometheus_client.core import (REGISTRY, CounterMetricFamily,
+                                    GaugeMetricFamily, HistogramMetricFamily)
 
 from .cache_metrics import CacheMetrics
 
@@ -13,18 +14,34 @@ class _MetricsCollector:
         self._caches.append((name, cache_metrics))
 
     def collect(self):
-        c = HistogramMetricFamily(
+        histo = HistogramMetricFamily(
             "cache_metrics_hit_count_by_percentage_size",
             "Tracks cache hit count for percentage sizes of the cache",
             labels=("cache_name",),
         )
 
+        memory = GaugeMetricFamily(
+            "cache_metrics_memory_usage",
+            "Amount of memory each cache metric is currently using",
+            labels=("cache_name",),
+        )
+
+        misses = CounterMetricFamily(
+            "caches_metrics_misses",
+            "Number of never before seen keys",
+            labels=("cache_name",),
+        )
+
         for name, cache in list(self._caches):
-            c.add_metric(
+            histo.add_metric(
                 (name,), [(str(k), v) for k, v in cache._cache.buckets()], None
             )
+            memory.add_metric((name,), cache._cache.memory_usage())
+            misses.add_metric((name,), cache._cache.misses())
 
-        yield c
+        yield histo
+        yield memory
+        yield misses
 
 
 _collector = _MetricsCollector()
