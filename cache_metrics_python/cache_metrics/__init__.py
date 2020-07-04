@@ -20,7 +20,9 @@ class _MetricsCollector:
         )
 
         for name, cache in list(self._caches):
-            c.add_metric((name,), cache._cache.buckets(), None)
+            c.add_metric(
+                (name,), [(str(k), v) for k, v in cache._cache.buckets()], None
+            )
 
         yield c
 
