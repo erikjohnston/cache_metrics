@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyDict};
+use pyo3::types::PyList;
 
 use cache_metrics::{Cache, BUCKET_PERCENTAGES};
 
@@ -9,12 +9,10 @@ fn cache_metrics(_py: Python, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-
 #[pyclass]
 struct CacheMetrics {
     cache_metrics: Cache,
 }
-
 
 #[pymethods]
 impl CacheMetrics {
@@ -32,20 +30,24 @@ impl CacheMetrics {
         Ok(())
     }
 
-
-    fn buckets(&self, py: Python) -> PyResult<Py<PyDict>> {
+    fn buckets(&self, py: Python) -> PyResult<Py<PyList>> {
         let values = self.cache_metrics.stats().hits();
 
-        let dict = PyDict::new(py);
+        let list = PyList::empty(py);
 
+        let mut cumalitive = 0;
         for (&percent, &count) in BUCKET_PERCENTAGES.iter().zip(values.iter()) {
-            dict.set_item(percent, count)?;
+            cumalitive += count;
+            list.append((percent, cumalitive))?;
         }
 
         // The last item in the returned list is the "inf" bucket.
-        dict.set_item("+Inf", values.last())?;
+        list.append((
+            "+Inf",
+            cumalitive + values.last().expect("slice is non-empty"),
+        ))?;
 
-        Ok(dict.into())
+        Ok(list.into())
     }
 
     fn misses(&self) -> u128 {
