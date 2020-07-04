@@ -1,0 +1,16 @@
+[package]
+name = "cache_metrics_python"
+version = "0.1.0"
+authors = ["Erik Johnston <erik@jki.re>"]
+edition = "2018"
+
+[lib]
+name = "cache_metrics"
+crate-type = ["cdylib"]
+
+[dependencies]
+cache_metrics = { path = "../cache_metrics" }
+
+[dependencies.pyo3]
+version = "0.11.1"
+features = ["extension-module"]

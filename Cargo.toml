@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "cache_metrics",
+    "cache_metrics_python",
+]
