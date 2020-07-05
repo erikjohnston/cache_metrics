@@ -62,6 +62,11 @@ impl Cache {
         }
     }
 
+    pub fn change_cache_size(&mut self, max_size: u64) {
+        self.max_size = max_size;
+        self.max_bucket_size = max_size/10;
+    }
+
     pub fn insert<T: Hash>(&mut self, item: T) {
         let mut hasher = DefaultHasher::new();
         item.hash(&mut hasher);
@@ -76,7 +81,7 @@ impl Cache {
             let percentage = 100 * ((bottom + top) / 2) / self.max_size;
             self.stats.hit(percentage as u16);
         } else if self.all_keys.contains(&item_hash) {
-            self.stats.hit(50000);
+            self.stats.hit(50000);  // Some very large number
         } else {
             self.stats.miss();
         }
@@ -95,8 +100,9 @@ impl Cache {
 
         let mut total_size = 0;
         if let Some(pos) = self.queue.iter().position(|x| {
+            let start_size = total_size;
             total_size += x.len();
-            total_size >= 5 * self.max_size
+            start_size >= 5 * self.max_size
         }) {
             self.queue.truncate(pos)
         }

@@ -59,5 +59,8 @@ class PrometheusCacheMetrics:
 
         _collector.add_cache_metrics(name, self)
 
+    def change_cache_size(self, max_size):
+        self._cache.max_size(max_size)
+
     def insert(self, item: Any):
         self._cache.insert(item)
