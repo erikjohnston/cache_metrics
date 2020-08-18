@@ -1,12 +1,18 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::VecDeque;
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    time::{Duration, Instant},
+};
 
 use cuckoofilter::CuckooFilter;
 use rand::rngs::OsRng;
 use scalable_cuckoo_filter::{ScalableCuckooFilter, ScalableCuckooFilterBuilder};
 
 pub const BUCKET_PERCENTAGES: [u16; 9] = [25, 50, 75, 90, 100, 110, 150, 200, 500];
+
+pub const ALL_KEY_DURATION: Duration = Duration::from_secs(3 * 60 * 60);
+pub const ALL_KEY_NUM_BUCKETS: usize = 12;
 
 #[derive(Default, Debug)]
 pub struct BucketStats {
@@ -21,6 +27,10 @@ impl BucketStats {
             .position(|&x| val <= x)
             .unwrap_or_else(|| BUCKET_PERCENTAGES.len());
         self.bucket_values[pos] += 1;
+    }
+
+    pub fn hit_inf(&mut self) {
+        self.bucket_values[BUCKET_PERCENTAGES.len()] += 1;
     }
 
     pub fn miss(&mut self) {
@@ -38,20 +48,19 @@ impl BucketStats {
 
 pub struct Cache {
     queue: VecDeque<CuckooFilter<DefaultHasher>>,
-    all_keys: ScalableCuckooFilter<u64, DefaultHasher, OsRng>,
+    all_keys: Vec<ScalableCuckooFilter<u64, DefaultHasher, OsRng>>,
     max_size: u64,
     max_bucket_size: u64,
     stats: BucketStats,
+    last_all_key_rotation: Instant,
 }
 
 impl Cache {
     pub fn new(max_size: u64) -> Cache {
-        let all_keys = ScalableCuckooFilterBuilder::new()
-            .initial_capacity(10 * max_size as usize)
-            .false_positive_probability(0.001)
-            .rng(OsRng::new().expect("os rng"))
-            .hasher(DefaultHasher::new())
-            .finish();
+        let all_keys = (0..ALL_KEY_NUM_BUCKETS)
+            .into_iter()
+            .map(|_| Cache::create_all_key_bucket())
+            .collect();
 
         Cache {
             max_size,
@@ -59,12 +68,21 @@ impl Cache {
             queue: VecDeque::new(),
             max_bucket_size: max_size / 10,
             stats: BucketStats::default(),
+            last_all_key_rotation: Instant::now(),
         }
+    }
+
+    fn create_all_key_bucket() -> ScalableCuckooFilter<u64, DefaultHasher, OsRng> {
+        ScalableCuckooFilterBuilder::new()
+            .false_positive_probability(0.01)
+            .rng(OsRng::new().expect("os rng"))
+            .hasher(DefaultHasher::new())
+            .finish()
     }
 
     pub fn change_cache_size(&mut self, max_size: u64) {
         self.max_size = max_size;
-        self.max_bucket_size = max_size/10;
+        self.max_bucket_size = max_size / 10;
     }
 
     pub fn insert<T: Hash>(&mut self, item: T) {
@@ -80,13 +98,19 @@ impl Cache {
 
             let percentage = 100 * ((bottom + top) / 2) / self.max_size;
             self.stats.hit(percentage as u16);
-        } else if self.all_keys.contains(&item_hash) {
-            self.stats.hit(50000);  // Some very large number
+        } else if self.all_keys.iter().any(|s| s.contains(&item_hash)) {
+            self.stats.hit_inf();
         } else {
             self.stats.miss();
         }
 
-        self.all_keys.insert(&item_hash);
+        self.all_keys[0].insert(&item_hash);
+
+        if Instant::now() - self.last_all_key_rotation > ALL_KEY_DURATION {
+            self.all_keys.rotate_right(1);
+            self.all_keys[0] = Cache::create_all_key_bucket();
+            self.last_all_key_rotation = Instant::now();
+        }
 
         if self.queue.is_empty() || self.queue[0].len() > self.max_bucket_size {
             self.queue.push_front(CuckooFilter::new())
@@ -114,8 +138,9 @@ impl Cache {
 
     pub fn memory_usage(&self) -> usize {
         let queue_mem: usize = self.queue.iter().map(|filter| filter.memory_usage()).sum();
+        let all_keys_mem: usize = self.all_keys.iter().map(|s| s.bits() as usize / 8).sum();
 
-        queue_mem + self.all_keys.bits() as usize / 8
+        queue_mem + all_keys_mem
     }
 }
 
@@ -137,7 +162,25 @@ mod tests {
     }
 
     #[test]
-    fn range() {
+    fn too_small() {
+        let mut cache = Cache::new(1000);
+
+        for i in 0..1300 {
+            cache.insert(i);
+        }
+
+        assert_eq!(cache.stats().misses(), 1300);
+
+        for i in 0..1300 {
+            cache.insert(i);
+        }
+
+        // If cache was 1.5x the size we'd hit all the above.
+        assert_eq!(cache.stats().hits()[6], 1300)
+    }
+
+    #[test]
+    fn varied() {
         let mut cache = Cache::new(1000);
 
         for i in 0..1300 {
